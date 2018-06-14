@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import logging
 import os
 import sys
@@ -28,7 +27,6 @@ parser.add_argument("-hl", "--headless", action='store_true', help="Force Headle
 
 args = parser.parse_args()
 
-
 try:
 	import tkinter
 	HEADLESS = False
@@ -49,8 +47,9 @@ from flask import Flask, redirect, abort, request, Response, send_from_directory
 
 app = Flask(__name__, static_url_path='')
 
-__version__ = 0.23
+__version__ = 0.24
 # Changelog
+# 0.24 - Add curl header to bypass some providers checks
 # 0.23 - Added epg redirection detection
 # 0.22 - Added xtreame editor epg support and fallback for gzip attempt if normal fails.
 # 0.21 - Misc bug fixes
@@ -74,7 +73,6 @@ if not sys.argv[0].endswith('.py'):
 url = "https://raw.githubusercontent.com/vorghahn/iptv4plex/master/%sversion.txt" % type
 latest_ver = float(json.loads(requests.urlopen(url).read().decode('utf-8'))['Version'])
 
-
 m3u8_playlist = ""
 group_list = {}
 language_list = {'en':True}
@@ -91,7 +89,6 @@ class channelinfo:
 	playlist = ''
 	language = 'en'
 
-
 ############################################################
 # CONFIG
 ############################################################
@@ -103,7 +100,6 @@ SERVER_HOST = "http://" + LISTEN_IP + ":" + str(LISTEN_PORT)
 M3U8URL = ''
 XMLURL = ''
 TUNERLIMITS = []
-
 
 # LINUX/WINDOWS
 if platform.system() == 'Linux':
@@ -177,7 +173,6 @@ def load_settings():
 	# if 'install' in sys.argv:
 	installer()
 
-
 ############################################################
 # Logging
 ############################################################
@@ -238,7 +233,6 @@ def writetemplate():
 	f.write(xmldata)
 	f.close()
 
-
 ############################################################
 # INSTALL GUI
 ############################################################
@@ -251,7 +245,6 @@ if not args.headless:
 		def addBox(self, frame):
 			# I use len(all_entries) to get number of next free row
 			next_row = len(self.all_m3u8)+4+len(self.all_tuners)+len(self.all_xml)
-
 
 			self.labelM3u8 = tkinter.StringVar()
 			self.labelM3u8.set("m3u8 url")
@@ -394,7 +387,6 @@ if not args.headless:
 			button1 = tkinter.Button(master, text="Submit", width=20, command=lambda: gather())
 			button1.grid(row=100, column=2)
 
-
 ############################################################
 # MISC Functions
 ############################################################
@@ -406,7 +398,6 @@ def find_between(s, first, last):
 		return s[start:end]
 	except ValueError:
 		return ""
-
 
 def thread_updater():
 	while True:
@@ -420,7 +411,6 @@ def thread_updater():
 				os.mkdir('updates')
 			requests.urlretrieve(latestfile, os.path.join('updates', newfilename))
 
-			
 ############################################################
 # playlist tools
 ############################################################
@@ -473,7 +463,7 @@ def obtain_m3u8():
 		pickle.dump(chan_map, f)
 
 
-		
+
 def m3u8_merger(url, m3u8_number):
 	global chan_map, m3u8_playlist, group_list, temp_chan_map
 	if url != '':
@@ -550,7 +540,7 @@ def epg_status():
 			logger.debug("Skipping download of epg")
 			return
 	obtain_epg()
-	
+
 def obtain_epg():
 	#clear epg file
 	f = open('./cache/epg.xml','w')
@@ -574,12 +564,18 @@ def xmltv_merger(xml_url):
 	else:
 		logger.debug("Request was not redirected")
 	if xml_url.endswith('.gz'):
-		requests.urlretrieve(xml_url, './cache/raw.xml.gz')
-		opened = gzip.open('./cache/raw.xml.gz')
+                opener = requests.build_opener()
+                opener.addheaders = [('User-agent', 'curl/7.47.0')]
+                requests.install_opener(opener)
+                requests.urlretrieve(xml_url, './cache/raw.xml.gz')
+                opened = gzip.open('./cache/raw.xml.gz')
 	else:
-		requests.urlretrieve(xml_url, './cache/raw.xml')
-		opened = open('./cache/raw.xml', encoding="UTF-8")
-
+                logger.debug("Trying with useragent")
+                opener = requests.build_opener()
+                opener.addheaders = [('User-agent', 'curl/7.47.0')]
+                requests.install_opener(opener)
+                requests.urlretrieve(xml_url, './cache/raw.xml')
+                opened = open('./cache/raw.xml', encoding="UTF-8")
 
 	tree = ET.parse('./cache/epg.xml')
 	treeroot = tree.getroot()
@@ -594,18 +590,16 @@ def xmltv_merger(xml_url):
 
 	for channel in source.iter('channel'):
 		treeroot.append(channel)
-		
+
 	for programme in source.iter('programme'):
 		treeroot.append(programme)
-		
+
 	tree.write('./cache/epg.xml')
 	with open('./cache/epg.xml', 'r+') as f:
 		content = f.read()
 		f.seek(0, 0)
 		f.write('<?xml version="1.0" encoding="UTF-8"?>'.rstrip('\r\n') + content)
 	return
-
-
 
 ############################################################
 # PLEX Live
@@ -626,7 +620,6 @@ def discover(tunerLimit=6,tunerNumber=""):
 	}
 	return jsonify(discoverData)
 
-
 def status():
 	return jsonify({
 		'ScanInProgress': 0,
@@ -634,7 +627,6 @@ def status():
 		'Source': "Cable",
 		'SourceList': ['Cable']
 	})
-
 
 def lineup(tuner='0'):
 	global chan_map
@@ -653,7 +645,6 @@ def lineup(tuner='0'):
 def lineup_post():
 	return ''
 
-
 def device(tunerLimit=6, tunerNumber=""):
 	discoverData = {
 		'FriendlyName': 'iptv4plex%s' % tunerNumber,
@@ -669,11 +660,9 @@ def device(tunerLimit=6, tunerNumber=""):
 	}
 	return render_template('device.xml', data=discoverData), {'Content-Type': 'application/xml'}
 
-
 ############################################################
 # Html
 ############################################################
-
 
 # Change this to change the style of the web page generated
 style = """
@@ -686,7 +675,6 @@ style = """
 	.right-half {position: absolute;  right: 0px;  width: 50%;}
 </style>
 """
-
 
 def create_menu():
 	footer = '<p>Donations: PayPal to vorghahn.sstv@gmail.com  or BTC - 19qvdk7JYgFruie73jE4VvW7ZJBv8uGtFb</p>'
@@ -884,11 +872,9 @@ def auto(request_file):
 					headers={'Access-Control-Allow-Origin': '*', "Content-Type": "video/mp2t",
 							 "Content-Disposition": "inline", "Content-Transfer-Enconding": "binary"})
 
-
 ############################################################
 # MAIN
 ############################################################
-
 
 if __name__ == "__main__":
 	logger.info("Initializing")
